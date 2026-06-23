@@ -1,0 +1,32 @@
+{
+  "name": "@iicmaster/opencode-plugins",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "Open-source Claude Code and Codex plugin adapters for delegating review and rescue workflows to the opencode CLI.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iicmaster/opencode-plugins.git"
+  },
+  "bugs": {
+    "url": "https://github.com/iicmaster/opencode-plugins/issues"
+  },
+  "homepage": "https://github.com/iicmaster/opencode-plugins#readme",
+  "keywords": [
+    "opencode",
+    "claude-code",
+    "codex",
+    "plugin",
+    "mcp",
+    "review",
+    "rescue"
+  ],
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "validate": "npm test"
+  }
+}

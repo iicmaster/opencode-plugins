@@ -1,0 +1,39 @@
+{
+  "name": "oc",
+  "version": "0.1.0",
+  "description": "Codex plugin for delegating work to the opencode CLI (opencode run).",
+  "author": {
+    "name": "IIC Master"
+  },
+  "license": "MIT",
+  "keywords": [
+    "opencode",
+    "codex",
+    "review",
+    "rescue",
+    "mcp"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "OpenCode",
+    "shortDescription": "Delegate review and rescue workflows to the opencode CLI",
+    "longDescription": "Use opencode from Codex to run setup checks, review current git changes, delegate bounded rescue tasks, and inspect background job results through the shared companion runtime.",
+    "developerName": "IIC Master",
+    "category": "Coding",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/iicmaster/opencode-plugins",
+    "privacyPolicyURL": "https://github.com/iicmaster/opencode-plugins",
+    "termsOfServiceURL": "https://github.com/iicmaster/opencode-plugins",
+    "defaultPrompt": [
+      "Use opencode to review this change",
+      "Delegate a bounded rescue task to opencode"
+    ],
+    "brandColor": "#111111",
+    "screenshots": []
+  }
+}

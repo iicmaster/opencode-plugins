@@ -1,0 +1,8 @@
+{
+  "name": "oc",
+  "version": "0.1.0",
+  "description": "Claude Code plugin for delegating work to the opencode CLI (opencode run).",
+  "author": {
+    "name": "IIC Master"
+  }
+}
