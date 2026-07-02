@@ -141,6 +141,15 @@ test("opencode MCP rescue does not expose edit-enabling or permission-bypass fla
       arguments: { task: "inspect safely", dangerouslySkipPermissions: true }
     });
     assert.match(rejected.error.message, /unknown argument: dangerouslySkipPermissions/);
+
+    // Binds the schema omission above to runtime behavior: rescue must reject a
+    // model arg even though oc_review accepts one, so re-adding "model" to the
+    // rescue allowlist without a schema change is caught here.
+    const modelRejected = await client.request("tools/call", {
+      name: "oc_rescue",
+      arguments: { task: "inspect safely", model: "zai-coding-plan/glm-5.2" }
+    });
+    assert.match(modelRejected.error.message, /unknown argument: model/);
   } finally {
     client.close();
   }
@@ -177,6 +186,65 @@ test("flag-like task text cannot escalate permissions through the companion", as
     assert.equal(payload.runOptions.sandbox, true);
     assert.equal(payload.runOptions.dangerouslySkipPermissions, false);
     assert.match(payload.runOptions.prompt, /--allow-edits/);
+  } finally {
+    client.close();
+  }
+});
+
+test("opencode MCP review forwards a validated model to the companion", async () => {
+  const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "oc-bin-"));
+  writeFakeOpencode(binDir);
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "oc-data-"));
+  const client = createMcpClient({
+    ...process.env,
+    PATH: `${binDir}${path.delimiter}${process.env.PATH}`,
+    CLAUDE_PLUGIN_DATA: dataDir
+  });
+
+  try {
+    await client.request("initialize", {
+      protocolVersion: "2024-11-05",
+      capabilities: {},
+      clientInfo: { name: "test", version: "0.0.0" }
+    });
+
+    const tools = await client.request("tools/list");
+    const review = tools.result.tools.find((tool) => tool.name === "oc_review");
+    assert.ok(Object.hasOwn(review.inputSchema.properties, "model"));
+
+    await client.request("tools/call", {
+      name: "oc_review",
+      arguments: { model: "zai-coding-plan/glm-5.2", focus: "check the diff" }
+    });
+
+    const jobsDir = path.join(dataDir, "state", "jobs");
+    const jobFile = fs.readdirSync(jobsDir).find((file) => file.endsWith(".json"));
+    const payload = JSON.parse(fs.readFileSync(path.join(jobsDir, jobFile), "utf8"));
+
+    // The model reached the companion as a validated run option, and review
+    // stays read-only (plan agent) regardless of the selected model.
+    assert.equal(payload.runOptions.model, "zai-coding-plan/glm-5.2");
+    assert.equal(payload.runOptions.sandbox, true);
+  } finally {
+    client.close();
+  }
+});
+
+test("opencode MCP review rejects a flag-like model value", async () => {
+  const client = createMcpClient(process.env);
+
+  try {
+    await client.request("initialize", {
+      protocolVersion: "2024-11-05",
+      capabilities: {},
+      clientInfo: { name: "test", version: "0.0.0" }
+    });
+
+    const rejected = await client.request("tools/call", {
+      name: "oc_review",
+      arguments: { model: "--dangerously-skip-permissions" }
+    });
+    assert.match(rejected.error.message, /model contains unsupported characters/);
   } finally {
     client.close();
   }
