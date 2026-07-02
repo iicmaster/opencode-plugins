@@ -322,3 +322,20 @@ test("git review context includes bounded untracked file contents", () => {
   assert.match(context.content, /### new-feature\.js/);
   assert.match(context.content, /export const value = 42;/);
 });
+
+test("git review context rejects a flag-like base ref before it reaches git", () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "oc-base-"));
+  spawnSync("git", ["init"], { cwd, encoding: "utf8" });
+  const injected = path.join(cwd, "oc-base-injection");
+
+  // A base beginning with "-" would otherwise be parsed by git as a flag such
+  // as --output=FILE, writing an attacker-chosen path. It must be rejected.
+  assert.throws(
+    () => collectGitReviewContext(cwd, { base: `--output=${injected}` }),
+    /base ref contains unsupported characters/
+  );
+  assert.ok(!fs.existsSync(injected));
+
+  // A normal rev like HEAD~1 still passes validation (no throw from the guard).
+  assert.doesNotThrow(() => collectGitReviewContext(cwd, { base: "HEAD~1" }));
+});

@@ -190,7 +190,7 @@ The current developer-preview gate is:
 - User prompt text is piped through child stdin in run mode, not passed through argv or shell-interpolated command text.
 - Read-only review runs opencode with the read-only `plan` agent (which denies file edits), `--pure` (no external/project plugins run), and prompt-level read-only constraints. opencode has no OS-level process sandbox equivalent to the Antigravity `--sandbox` flag, so review isolation is enforced by agent policy and prompt, not by process containment. Do not run review or rescue against code you do not trust.
 - A reviewed repository's `opencode.json` / `.opencode/` can change opencode's agent permissions for that working directory. `--pure` disables external plugins, but treat untrusted repositories with caution.
-- User-supplied `--model` and `--session` values are validated and may not begin with `-`, so they cannot be injected as opencode flags.
+- User-supplied `--model`, `--session`, and `--base` values are validated and may not begin with `-`, so they cannot be injected as opencode or git flags (the `--base` ref is checked before it reaches `git diff <base>...HEAD`).
 - `--dangerously-skip-permissions` is never enabled unless explicitly requested, is gated on whether the local opencode build advertises it, and is not exposed through the Codex MCP rescue tool.
 - Job state is written outside the repository by default.
 

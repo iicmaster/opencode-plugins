@@ -6,6 +6,13 @@ const MAX_UNTRACKED_FILES = 20;
 const MAX_UNTRACKED_BYTES_PER_FILE = 20_000;
 const MAX_UNTRACKED_TOTAL_BYTES = 100_000;
 
+// A base ref reaches git as the single token `${base}...HEAD`. If it began with
+// "-", git would parse it as a flag (e.g. `--output=FILE`, which writes a file),
+// so the first char must be an ordinary ref char. A spawn arg is never split on
+// whitespace, so a leading-"-" guard plus a bounded length is enough to prevent
+// flag injection while still allowing refs like HEAD~3, origin/main, or v1.2.3^.
+const SAFE_BASE_PATTERN = /^[A-Za-z0-9_.][A-Za-z0-9._/@~^{}-]{0,200}$/;
+
 function runGit(cwd, args) {
   const result = spawnSync("git", args, {
     cwd,
@@ -110,6 +117,9 @@ function collectUntrackedFileContext(cwd) {
 
 export function collectGitReviewContext(cwd, options = {}) {
   const base = options.base ?? null;
+  if (base != null && !SAFE_BASE_PATTERN.test(String(base))) {
+    throw new Error('base ref contains unsupported characters or starts with "-"');
+  }
   const isRepo = runGit(cwd, ["rev-parse", "--is-inside-work-tree"]);
   if (!isRepo.ok) {
     return {
