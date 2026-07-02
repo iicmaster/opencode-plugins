@@ -25,6 +25,23 @@ console.log("fake opencode invoked");
   fs.chmodSync(fake, 0o755);
 }
 
+function writeHangingOpencode(binDir) {
+  const fake = path.join(binDir, "opencode");
+  fs.writeFileSync(
+    fake,
+    `#!/usr/bin/env node
+if (process.argv.includes("--help")) {
+  console.log("run --agent --model --session --continue --pure --dangerously-skip-permissions");
+  process.exit(0);
+}
+// Never produce output or exit on its own; the wrapper timeout must stop it.
+setInterval(() => {}, 1000);
+`,
+    "utf8"
+  );
+  fs.chmodSync(fake, 0o755);
+}
+
 function createMcpClient(env) {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "oc-mcp-"));
   const child = spawn(process.execPath, [SERVER], {
@@ -225,6 +242,36 @@ test("opencode MCP review forwards a validated model to the companion", async ()
     // stays read-only (plan agent) regardless of the selected model.
     assert.equal(payload.runOptions.model, "zai-coding-plan/glm-5.2");
     assert.equal(payload.runOptions.sandbox, true);
+  } finally {
+    client.close();
+  }
+});
+
+test("opencode MCP review does not hang when opencode stalls", async () => {
+  const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "oc-bin-"));
+  writeHangingOpencode(binDir);
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "oc-data-"));
+  const client = createMcpClient({
+    ...process.env,
+    PATH: `${binDir}${path.delimiter}${process.env.PATH}`,
+    CLAUDE_PLUGIN_DATA: dataDir
+  });
+
+  try {
+    await client.request("initialize", {
+      protocolVersion: "2024-11-05",
+      capabilities: {},
+      clientInfo: { name: "test", version: "0.0.0" }
+    });
+
+    // A stalled opencode must not block the tool call for the 10m default. With
+    // a 1s job timeout the companion kills the child and the MCP call returns
+    // promptly with a timeout notice instead of hanging.
+    const review = await client.request("tools/call", {
+      name: "oc_review",
+      arguments: { timeout: "1s" }
+    });
+    assert.match(review.result.content[0].text, /timed out/i);
   } finally {
     client.close();
   }

@@ -5,9 +5,18 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+import { goDurationToMilliseconds } from "./lib/oc-runtime.mjs";
+
 const PLUGIN_ROOT = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const COMPANION = path.join(PLUGIN_ROOT, "scripts", "oc-companion.mjs");
 const GO_DURATION_PATTERN = /^(?:\d+(?:\.\d+)?(?:ns|us|µs|ms|s|m|h))+$/;
+// spawnSync in runCompanion is synchronous: without a timeout a foreground
+// review/rescue would block the MCP tool call until opencode returns (up to the
+// companion's own 10m default), which shows up to the host agent as a hang. The
+// backstop kills the companion process if it ever wedges past the job timeout.
+const FAST_OP_TIMEOUT_MS = 60_000; // setup/status/result/cancel: fs ops + bounded help probe
+const RUN_TIMEOUT_GRACE_MS = 30_000; // headroom over the job's own --timeout before the backstop fires
+const DEFAULT_RUN_TIMEOUT_MS = 600_000; // mirrors the companion DEFAULT_TIMEOUT of 10m0s
 const SAFE_REF_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/@-]{0,127}$/;
 const SAFE_JOB_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 // Mirror the companion's SAFE_VALUE_PATTERN: a model value must start with an
@@ -194,14 +203,32 @@ function addCommonRunArgs(argv, args) {
   }
 }
 
-function runCompanion(command, argv = []) {
+// Foreground runs may legitimately last up to the job's own --timeout (default
+// 10m); the backstop sits one grace period beyond that so it only fires if the
+// companion itself wedges, never on a healthy long review.
+function runBackstopMs(args) {
+  const timeout = optionalDuration(args);
+  const jobMs = timeout ? goDurationToMilliseconds(timeout) : DEFAULT_RUN_TIMEOUT_MS;
+  return jobMs + RUN_TIMEOUT_GRACE_MS;
+}
+
+function runCompanion(command, argv = [], timeoutMs = FAST_OP_TIMEOUT_MS) {
   const result = spawnSync(process.execPath, [COMPANION, command, ...argv], {
     cwd: process.cwd(),
     env: process.env,
     encoding: "utf8",
-    shell: false
+    shell: false,
+    timeout: timeoutMs,
+    killSignal: "SIGKILL"
   });
   const text = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+  if (result.error?.code === "ETIMEDOUT") {
+    const seconds = Math.round(timeoutMs / 1000);
+    return {
+      content: [{ type: "text", text: `${text}oc MCP backstop: the companion did not return within ${seconds}s and was killed. Use background: true (then oc_status / oc_result) or a shorter timeout.\n` }],
+      isError: true
+    };
+  }
   return {
     content: [{ type: "text", text: text || "(no output)\n" }],
     isError: Boolean(result.error) || result.status !== 0
@@ -259,11 +286,11 @@ function callTool(name, rawArgs = {}) {
       rejectUnknown(args, ["jobId"]);
       return runCompanion("cancel", jobArg(args, true));
     case "oc_review":
-      return runCompanion("review", reviewArgs(args));
+      return runCompanion("review", reviewArgs(args), runBackstopMs(args));
     case "oc_adversarial_review":
-      return runCompanion("adversarial-review", reviewArgs(args));
+      return runCompanion("adversarial-review", reviewArgs(args), runBackstopMs(args));
     case "oc_rescue":
-      return runCompanion("rescue", rescueArgs(args));
+      return runCompanion("rescue", rescueArgs(args), runBackstopMs(args));
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
