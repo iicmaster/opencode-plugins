@@ -10,6 +10,7 @@ const DEFAULT_TIMEOUT = "10m0s";
 const GO_DURATION_PATTERN = /^(?:\d+(?:\.\d+)?(?:ns|us|µs|ms|s|m|h))+$/;
 const FORCE_KILL_GRACE_MS = 2000;
 const HELP_PROBE_TIMEOUT_MS = 20_000;
+const MODELS_PROBE_TIMEOUT_MS = 5_000;
 // opencode parses argv values that begin with "-" as flags. A user-controlled
 // model or session value must therefore start with an alphanumeric character
 // so it can never be injected as a flag, and must be bounded and free of
@@ -324,6 +325,39 @@ export function opencodeAvailable(cwd = process.cwd(), env = process.env) {
     timeout: HELP_PROBE_TIMEOUT_MS
   });
   return analyzeOpencodeHelpResult(result);
+}
+
+const ANSI_ESCAPE_PATTERN = /\x1b\[[0-9;?]*[A-Za-z]/g;
+// Model ids may span several path segments, e.g.
+// cloudflare-ai-gateway/workers-ai/@cf/moonshotai/kimi-k2.5.
+const MODEL_ID_PATTERN = /[A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9._:@-]+)+/g;
+
+// Bounded, never-throwing probe for `opencode models`. Returns a Set of model
+// ids, or null on any failure (non-zero exit, timeout, spawn error) so callers
+// can skip the warn-only check without blocking the run. The default timeout
+// is short because the probe runs on every model'd invocation, including
+// background submissions, and its failure mode is a benign, logged skip.
+// timeoutMs is injectable so tests can shrink it. Kept here because
+// oc-runtime.mjs owns all opencode process execution.
+export function listOpencodeModels(cwd = process.cwd(), env = process.env, { timeoutMs = MODELS_PROBE_TIMEOUT_MS } = {}) {
+  const result = spawnSync("opencode", ["models"], {
+    cwd,
+    env,
+    encoding: "utf8",
+    timeout: timeoutMs
+  });
+  if (result.error || result.status !== 0) {
+    return null;
+  }
+  const clean = String(result.stdout ?? "").replace(ANSI_ESCAPE_PATTERN, "");
+  return new Set(clean.match(MODEL_ID_PATTERN) ?? []);
+}
+
+// Exported wrapper around normalizeArgvValue so the companion can validate a
+// resolved model BEFORE persisting or logging it (previously validation only
+// happened inside buildOpencodeArgv, after the job was already written).
+export function assertSafeModelValue(model) {
+  return normalizeArgvValue(model, "model");
 }
 
 export async function runJobFile(jobFile, env = process.env) {
