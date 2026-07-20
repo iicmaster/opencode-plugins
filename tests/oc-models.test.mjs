@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -119,4 +120,174 @@ test("createJob records the resolved model and its source in state", () => {
   const job = loadState(cwd, env).jobs.find((entry) => entry.id === payload.id);
   assert.equal(job.model, "kimi-for-coding/k3");
   assert.equal(job.modelSource, "flag");
+});
+
+const COMPANION = new URL("../plugins/oc/scripts/oc-companion.mjs", import.meta.url).pathname;
+
+function writeFullFakeOpencode(binDir) {
+  writeFakeOpencode(binDir, `#!/usr/bin/env node
+if (process.argv[2] === "models") {
+  process.stdout.write("zai-coding-plan/glm-5.2\\nkimi-for-coding/k3\\n");
+  process.exit(0);
+}
+if (process.argv.includes("--help")) {
+  console.log("run --agent --model --session --continue --pure --dangerously-skip-permissions");
+  process.exit(0);
+}
+let stdin = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => { stdin += chunk; });
+process.stdin.on("end", () => {
+  process.stdout.write(JSON.stringify({ argv: process.argv.slice(2), stdin }));
+});
+`);
+}
+
+function companionEnv(cwd) {
+  const binDir = path.join(cwd, "bin");
+  const dataDir = path.join(cwd, "plugin-data");
+  return {
+    binDir,
+    dataDir,
+    env: {
+      ...process.env,
+      OC_MODEL: "",
+      PATH: `${binDir}${path.delimiter}${process.env.PATH}`,
+      CLAUDE_PLUGIN_DATA: dataDir
+    }
+  };
+}
+
+function readSoleJobPayload(dataDir) {
+  const jobsDir = path.join(dataDir, "state", "jobs");
+  const jobFile = fs.readdirSync(jobsDir).find((file) => file.endsWith(".json"));
+  return JSON.parse(fs.readFileSync(path.join(jobsDir, jobFile), "utf8"));
+}
+
+test("companion review resolves an alias, records it, and forwards the full id", () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "oc-alias-run-"));
+  spawnSync("git", ["init"], { cwd, encoding: "utf8" });
+  const { binDir, dataDir, env } = companionEnv(cwd);
+  writeFullFakeOpencode(binDir);
+
+  const run = spawnSync(process.execPath, [COMPANION, "review", "--model", "kimi", "--", "check the diff"], {
+    cwd, env, encoding: "utf8"
+  });
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /model: kimi-for-coding\/k3 \(alias "kimi"\)/);
+
+  const payload = readSoleJobPayload(dataDir);
+  assert.equal(payload.runOptions.model, "kimi-for-coding/k3");
+  const job = loadState(cwd, env).jobs.find((entry) => entry.id === payload.id);
+  assert.equal(job.model, "kimi-for-coding/k3");
+  assert.equal(job.modelSource, "flag");
+
+  const invocation = JSON.parse(fs.readFileSync(payload.resultFile, "utf8"));
+  assert.ok(invocation.argv.includes("--model"));
+  assert.ok(invocation.argv.includes("kimi-for-coding/k3"));
+
+  const log = fs.readFileSync(payload.logFile, "utf8");
+  assert.equal((log.match(/model: kimi-for-coding\/k3/g) ?? []).length, 1);
+});
+
+test("companion falls back to OC_MODEL when no --model flag is given", () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "oc-env-model-"));
+  spawnSync("git", ["init"], { cwd, encoding: "utf8" });
+  const { binDir, dataDir, env } = companionEnv(cwd);
+  writeFullFakeOpencode(binDir);
+
+  const run = spawnSync(process.execPath, [COMPANION, "review", "--", "check"], {
+    cwd, env: { ...env, OC_MODEL: "glm" }, encoding: "utf8"
+  });
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /model: zai-coding-plan\/glm-5\.2 \(alias "glm", OC_MODEL\)/);
+  assert.equal(readSoleJobPayload(dataDir).runOptions.model, "zai-coding-plan/glm-5.2");
+});
+
+test("companion review with an unlisted model warns on stderr but still succeeds", () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "oc-unknown-model-"));
+  spawnSync("git", ["init"], { cwd, encoding: "utf8" });
+  const { binDir, dataDir, env } = companionEnv(cwd);
+  writeFullFakeOpencode(binDir);
+
+  const run = spawnSync(process.execPath, [COMPANION, "review", "--model", "acme/nope-1", "--", "check"], {
+    cwd, env, encoding: "utf8"
+  });
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stderr, /not listed by `opencode models`/);
+  const payload = readSoleJobPayload(dataDir);
+  assert.equal(payload.runOptions.model, "acme/nope-1");
+  assert.ok(fs.readFileSync(payload.logFile, "utf8").includes("not listed by `opencode models`"));
+});
+
+test("companion logs a skipped model check when the probe fails and still runs", () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "oc-probe-fail-"));
+  spawnSync("git", ["init"], { cwd, encoding: "utf8" });
+  const { binDir, dataDir, env } = companionEnv(cwd);
+  writeFakeOpencode(binDir, `#!/usr/bin/env node
+if (process.argv[2] === "models") { process.exit(3); }
+if (process.argv.includes("--help")) {
+  console.log("run --agent --model --session --continue --pure --dangerously-skip-permissions");
+  process.exit(0);
+}
+let stdin = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => { stdin += chunk; });
+process.stdin.on("end", () => process.stdout.write(JSON.stringify({ argv: process.argv.slice(2) })));
+`);
+
+  const run = spawnSync(process.execPath, [COMPANION, "review", "--model", "kimi", "--", "check"], {
+    cwd, env, encoding: "utf8"
+  });
+  assert.equal(run.status, 0, run.stderr);
+  assert.ok(!run.stderr.includes("not listed"));
+  const log = fs.readFileSync(readSoleJobPayload(dataDir).logFile, "utf8");
+  assert.equal((log.match(/model check skipped \(probe failed\)/g) ?? []).length, 1);
+});
+
+test("companion rejects an unsafe OC_MODEL before any job is created", () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "oc-bad-env-"));
+  spawnSync("git", ["init"], { cwd, encoding: "utf8" });
+  const { binDir, dataDir, env } = companionEnv(cwd);
+  writeFullFakeOpencode(binDir);
+
+  const run = spawnSync(process.execPath, [COMPANION, "review", "--", "check"], {
+    cwd, env: { ...env, OC_MODEL: "-evil" }, encoding: "utf8"
+  });
+  assert.notEqual(run.status, 0);
+  assert.match(run.stderr, /model contains unsupported characters/);
+  assert.ok(!fs.existsSync(path.join(dataDir, "state", "jobs")));
+});
+
+test("companion setup lists model aliases and the OC_MODEL value", () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "oc-setup-"));
+  const { binDir, env } = companionEnv(cwd);
+  writeFullFakeOpencode(binDir);
+
+  const withEnv = spawnSync(process.execPath, [COMPANION, "setup"], {
+    cwd, env: { ...env, OC_MODEL: "kimi" }, encoding: "utf8"
+  });
+  assert.equal(withEnv.status, 0, withEnv.stderr);
+  assert.match(withEnv.stdout, /OC_MODEL: kimi/);
+  assert.match(withEnv.stdout, /kimi -> kimi-for-coding\/k3/);
+  assert.match(withEnv.stdout, /glm -> zai-coding-plan\/glm-5\.2/);
+
+  const withoutEnv = spawnSync(process.execPath, [COMPANION, "setup"], { cwd, env, encoding: "utf8" });
+  assert.match(withoutEnv.stdout, /OC_MODEL: unset/);
+});
+
+test("companion status shows the recorded model for each job", () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "oc-status-model-"));
+  const { binDir, dataDir, env } = companionEnv(cwd);
+  writeFullFakeOpencode(binDir);
+  const payload = createJob(cwd, {
+    kind: "review",
+    prompt: "x",
+    model: "kimi-for-coding/k3",
+    modelSource: "flag"
+  }, env);
+
+  const run = spawnSync(process.execPath, [COMPANION, "status"], { cwd, env, encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, new RegExp(`${payload.id}.*kimi-for-coding/k3`));
 });

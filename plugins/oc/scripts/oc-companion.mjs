@@ -7,16 +7,19 @@ import { fileURLToPath } from "node:url";
 
 import {
   opencodeAvailable,
+  assertSafeModelValue,
   cancelJob,
   createJob,
   findJob,
   listJobs,
+  listOpencodeModels,
   readJobPayload,
   resolveStateDir,
   runJobFile,
   startBackgroundWorker,
   upsertJob
 } from "./lib/oc-runtime.mjs";
+import { MODEL_ALIASES, resolveModel, unknownModelWarning } from "./lib/models.mjs";
 import { collectGitReviewContext } from "./lib/git-context.mjs";
 import { interpolate, loadPrompt } from "./lib/prompts.mjs";
 
@@ -128,6 +131,9 @@ function renderSetup(report) {
     `opencode ready: ${report.ready ? "yes" : "no"}`,
     `opencode available: ${report.opencode.available ? "yes" : "no"}`,
     `state dir: ${report.stateDir}`,
+    `OC_MODEL: ${report.ocModelEnv ?? "unset"}`,
+    "model aliases:",
+    ...Object.entries(report.modelAliases).map(([alias, id]) => `  ${alias} -> ${id}`),
     ""
   ];
   if (report.missingFeatures.length > 0) {
@@ -157,7 +163,9 @@ async function handleSetup(argv) {
       supports: opencode.supports
     },
     missingFeatures,
-    stateDir: resolveStateDir(cwd)
+    stateDir: resolveStateDir(cwd),
+    modelAliases: MODEL_ALIASES,
+    ocModelEnv: String(process.env.OC_MODEL ?? "").trim() || null
   };
   output(options.json ? report : renderSetup(report), Boolean(options.json));
 }
@@ -178,6 +186,21 @@ async function runPromptJob(kind, prompt, options) {
   // agent). Only rescue may switch to the editing `build` agent, and only when
   // the caller explicitly passes --allow-edits.
   const sandbox = kind === "rescue" ? !options["allow-edits"] : true;
+
+  // Model selection: resolve aliases/OC_MODEL, then validate BEFORE anything is
+  // probed, persisted, or logged so an unsafe value can never reach the payload,
+  // the logs, or a background worker (previously validation only happened inside
+  // runJobFile, after the job was already marked running).
+  const resolved = resolveModel(options.model, process.env);
+  if (resolved.model) {
+    assertSafeModelValue(resolved.model);
+  }
+  const knownModels = resolved.model ? listOpencodeModels(cwd, process.env) : null;
+  const warning = resolved.model ? unknownModelWarning(resolved.model, knownModels) : null;
+  if (warning) {
+    process.stderr.write(`${warning}\n`);
+  }
+
   const payload = createJob(cwd, {
     kind,
     prompt,
@@ -187,8 +210,26 @@ async function runPromptJob(kind, prompt, options) {
     dangerouslySkipPermissions: Boolean(options["dangerously-skip-permissions"]),
     continueLast: Boolean(options.continue),
     session: options.session ?? null,
-    model: options.model ?? null
+    model: resolved.model,
+    modelSource: resolved.source
   });
+
+  if (resolved.model) {
+    const sourceLabel = resolved.aliasUsed
+      ? ` (alias "${resolved.aliasUsed}"${resolved.source === "env" ? ", OC_MODEL" : ""})`
+      : resolved.source === "env"
+        ? " (from OC_MODEL)"
+        : "";
+    const modelLine = `model: ${resolved.model}${sourceLabel}\n`;
+    process.stdout.write(modelLine);
+    fs.appendFileSync(payload.logFile, modelLine, "utf8");
+  }
+  if (warning) {
+    fs.appendFileSync(payload.logFile, `${warning}\n`, "utf8");
+  } else if (resolved.model && knownModels === null) {
+    // Warn-only must not mean silent: the skip itself goes on the record.
+    fs.appendFileSync(payload.logFile, "oc: model check skipped (probe failed)\n", "utf8");
+  }
 
   if (options.background) {
     const pid = startBackgroundWorker(cwd, payload.jobFile, WORKER_FILE);
@@ -227,7 +268,8 @@ function renderStatus(jobs) {
   }
   return `${jobs.map((job) => {
     const updated = job.updatedAt ?? job.createdAt ?? "";
-    return `${job.id}  ${job.status}  ${job.kind ?? "job"}  ${updated}`;
+    const model = job.model ? `  ${job.model}` : "";
+    return `${job.id}  ${job.status}  ${job.kind ?? "job"}${model}  ${updated}`;
   }).join("\n")}\n`;
 }
 
