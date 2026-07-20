@@ -32,7 +32,8 @@ function fakeEnv(cwd, binDir) {
   return {
     ...process.env,
     CLAUDE_PLUGIN_DATA: path.join(cwd, "plugin-data"),
-    PATH: `${binDir}${path.delimiter}${process.env.PATH}`
+    PATH: `${binDir}${path.delimiter}${process.env.PATH}`,
+    OC_MODEL: ""
   };
 }
 
@@ -338,4 +339,49 @@ test("git review context rejects a flag-like base ref before it reaches git", ()
 
   // A normal rev like HEAD~1 still passes validation (no throw from the guard).
   assert.doesNotThrow(() => collectGitReviewContext(cwd, { base: "HEAD~1" }));
+});
+
+test("runJobFile warns on stderr and in the log when the local opencode lacks --model support", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "oc-nomodel-"));
+  const binDir = path.join(cwd, "bin");
+  writeFakeOpencode(
+    binDir,
+    `#!/usr/bin/env node
+if (process.argv.includes("--help")) {
+  console.log("run --agent --session --continue --pure");
+  process.exit(0);
+}
+process.stdout.write(JSON.stringify({ argv: process.argv.slice(2) }));
+process.exit(0);
+`
+  );
+
+  const env = fakeEnv(cwd, binDir);
+  const payload = createJob(cwd, {
+    kind: "review",
+    prompt: "x",
+    timeout: "5s",
+    sandbox: true,
+    model: "kimi-for-coding/k3"
+  }, env);
+
+  const stderrWrites = [];
+  const originalWrite = process.stderr.write;
+  process.stderr.write = (chunk) => {
+    stderrWrites.push(String(chunk));
+    return true;
+  };
+  let result;
+  try {
+    result = await runJobFile(payload.jobFile, env);
+  } finally {
+    process.stderr.write = originalWrite;
+  }
+
+  assert.equal(result.status, "succeeded");
+  assert.equal(stderrWrites.filter((text) => text.includes("does not advertise --model")).length, 1);
+  const log = fs.readFileSync(payload.logFile, "utf8");
+  assert.equal(log.match(/does not advertise --model/g).length, 1);
+  // The run proceeds with the model omitted.
+  assert.ok(!JSON.parse(result.stdout).argv.includes("--model"));
 });

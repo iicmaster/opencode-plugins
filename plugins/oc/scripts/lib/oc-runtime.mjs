@@ -375,6 +375,14 @@ export async function runJobFile(jobFile, env = process.env) {
   }, env);
 
   const opencode = opencodeAvailable(cwd, env);
+  if (payload.runOptions.model && opencode.available && !opencode.supports.model) {
+    // buildOpencodeArgv would silently drop the model on this build; surface it
+    // on the live stderr (foreground) and always in the job log (background
+    // workers have no console).
+    const message = `oc: warning: this opencode build does not advertise --model; model "${payload.runOptions.model}" will be ignored\n`;
+    process.stderr.write(message);
+    await fs.promises.appendFile(payload.logFile, message, "utf8");
+  }
   const argv = buildOpencodeArgv(payload.runOptions, opencode.supports);
   await fs.promises.appendFile(payload.logFile, `$ opencode ${argv.map((arg) => JSON.stringify(arg)).join(" ")}\n`, "utf8");
 
