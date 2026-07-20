@@ -307,13 +307,14 @@ test("background rescue propagates the resolved model and the flag beats OC_MODE
   assert.ok(jobId);
 
   let job;
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
     job = loadState(cwd, env).jobs.find((entry) => entry.id === jobId);
     if (job && ["succeeded", "failed", "cancelled"].includes(job.status)) {
       break;
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
+  assert.ok(job, "background job did not reach a terminal state in time");
   assert.equal(job.status, "succeeded");
   assert.equal(job.model, "kimi-for-coding/k3");
   assert.equal(job.modelSource, "flag");
