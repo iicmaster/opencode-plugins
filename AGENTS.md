@@ -19,6 +19,7 @@
 - Read-only review maps to the opencode `plan` agent plus `--pure`; edits map to the `build` agent. There is no process-level sandbox flag.
 - `--add-dir` and `--log-file` have no opencode equivalent and are intentionally not emitted; the runtime captures stdout/stderr to its own job log.
 - User-controlled `--model` / `--session` values must pass the safe-value pattern (no leading `-`) so they cannot be injected as flags.
+- Model aliases and `OC_MODEL` resolve inside the companion (`lib/models.mjs`) and are validated by the same safe-value pattern before persistence; `lib/oc-runtime.mjs` owns the bounded `opencode models` probe.
 - Capability flags are gated on parsing `opencode run --help`; do not hardcode flag support against an assumed opencode version.
 - Write only opencode stdout to the job result file; stderr (log noise) goes to the job log only.
 

@@ -51,6 +51,27 @@ This repository mirrors [`antigravity-plugins`](https://github.com/iicmaster/ant
 
 `setup` verifies the binary and the flags this plugin needs (`run`, `--agent`, `--model`, `--session`, `--continue`). Actual delegation still depends on your local opencode authentication and model configuration.
 
+## Model Selection
+
+Reviews and rescues run on your opencode default model unless you pick another one:
+
+- `--model <id|alias>` on `/oc:review`, `/oc:adversarial-review`, `/oc:rescue`, or the `model`
+  parameter on the Codex MCP tools (including `oc_rescue`).
+- `OC_MODEL` environment variable as the default when `--model` is absent.
+- Precedence: `--model` > `OC_MODEL` > opencode's own configured default.
+
+Built-in aliases (resolved by the companion; full ids always work too):
+
+| Alias | Model id |
+| --- | --- |
+| `kimi`, `kimi-k3` | `kimi-for-coding/k3` |
+| `glm`, `glm-5.2` | `zai-coding-plan/glm-5.2` |
+
+Before each model'd run the companion checks the resolved id against `opencode models` (bounded 5s
+probe). The check is warn-only: an unlisted id prints a warning and runs anyway, and a failed probe is
+noted in the job log as skipped. `/oc:setup` lists the aliases and the current `OC_MODEL`; `/oc:status`
+shows the model each job ran with.
+
 ## AI-Assisted Installation
 
 The quickest path is to paste this repository URL into Claude Code or Codex and ask that host agent to install the plugin for you:

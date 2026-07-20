@@ -13,3 +13,8 @@ All notable changes to this project will be documented in this file.
 - Safe-value validation for `--model` and `--session` so user-controlled values cannot be injected as opencode flags.
 - Tests for runtime safety, plugin structure, and MCP setup behavior.
 - Public open-source documentation describing the Antigravity-to-opencode mapping and the opencode-specific security model.
+- Built-in model aliases (`kimi`, `kimi-k3`, `glm`, `glm-5.2`) and an `OC_MODEL` default for opencode model selection, resolved and validated in the companion before job creation.
+- Warn-only pre-run check of the resolved model against `opencode models` (bounded 5s probe; failures are logged as skipped, never block).
+- `model` parameter on the Codex MCP `oc_rescue` tool (parity with `/oc:rescue`); rescue stays read-only regardless of model.
+- Job state records the resolved model and its source; `status` shows the model and `setup` lists aliases plus the current `OC_MODEL`.
+- Warning when the local opencode build does not advertise `--model` and a selection would be silently ignored.

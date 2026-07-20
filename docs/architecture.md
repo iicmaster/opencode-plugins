@@ -41,7 +41,7 @@ This plugin mirrors the Antigravity (`agy`) plugin contract but delegates to `op
 - `opencode run` reads the prompt from stdin when no positional message is given, so the prompt stays off the process command line (verified against opencode 1.1.x).
 - opencode has no run-timeout flag, so `oc-runtime` enforces a hard wrapper-side timeout (`goDurationToMilliseconds` + `SIGTERM`/`SIGKILL`).
 - Read-only review maps to the `plan` agent plus `--pure`; edits map to the `build` agent. There is no process sandbox flag.
-- `--continue` and `--session` cover session continuity; `--model` is an optional passthrough.
+- `--continue` and `--session` cover session continuity; `--model` is resolved by the companion (built-in aliases `kimi`/`glm`, then `OC_MODEL`), validated before persistence, checked warn-only against `opencode models`, and recorded in job state.
 - Capability flags are detected by parsing `opencode run --help`, never hardcoded against a version string.
 - `--add-dir` and `--log-file` have no opencode equivalent and are not emitted; the runtime captures stdout/stderr to its own job log and writes only stdout to the job result file.
 

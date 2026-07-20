@@ -1,6 +1,6 @@
 ---
 description: Ask the opencode CLI to challenge the implementation and hunt for hidden risks
-argument-hint: "[--wait|--background] [--base <ref>] [--timeout <duration>] [--model <provider/model>] [focus text]"
+argument-hint: "[--wait|--background] [--base <ref>] [--timeout <duration>] [--model <id|alias>] [focus text]"
 disable-model-invocation: true
 allowed-tools: Bash(node:*), Bash(git:*), AskUserQuestion
 ---
@@ -14,6 +14,7 @@ Core constraints:
 - This command is review-only. It runs opencode with the read-only `plan` agent.
 - Focus on bugs, regressions, security risks, rollback hazards, and weak assumptions.
 - Return the companion stdout verbatim to the user.
+- Model selection: `--model` accepts a full id or an alias (`kimi`, `glm`); `OC_MODEL` is the default when `--model` is absent. Validation against `opencode models` is warn-only.
 
 Run:
 

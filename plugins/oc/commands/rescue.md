@@ -1,6 +1,6 @@
 ---
 description: Delegate investigation or a bounded fix request from Claude Code to the opencode CLI
-argument-hint: "[--wait|--background] [--timeout <duration>] [--allow-edits] [--dangerously-skip-permissions] [--model <provider/model>] [task]"
+argument-hint: "[--wait|--background] [--timeout <duration>] [--allow-edits] [--dangerously-skip-permissions] [--model <id|alias>] [task]"
 allowed-tools: Bash(node:*), Agent, AskUserQuestion
 ---
 
@@ -15,6 +15,7 @@ Rules:
 - Leave `--dangerously-skip-permissions` unset unless the user explicitly requested it.
 - Prefer foreground for small bounded tasks and background for long-running rescue work.
 - Return the companion stdout verbatim.
+- Model selection: `--model` accepts a full id or an alias (`kimi`, `glm`); `OC_MODEL` is the default when `--model` is absent. Validation against `opencode models` is warn-only.
 
 Run:
 

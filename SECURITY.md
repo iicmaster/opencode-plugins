@@ -22,6 +22,7 @@ If private reporting is not available, contact the maintainer through the GitHub
 - Spawn `opencode` with argv arrays and `shell: false`; do not construct shell strings from user text.
 - Pipe `opencode run` prompt text through child stdin; do not pass the prompt as a positional argv item or log it as part of the command line.
 - Validate user-controlled `--model`, `--session`, and `--base` values (no leading `-`, bounded length) so they cannot be injected as opencode or git flags. The `--base` ref is validated before it reaches `git diff <base>...HEAD`, because a value beginning with `-` would otherwise be parsed by git as a flag such as `--output=FILE`.
+- Aliases and the `OC_MODEL` default resolve to full ids from a fixed map and pass the same safe-value validation before anything is persisted or logged, so they cannot widen the injection surface. The `opencode models` probe is a fixed-argv `spawnSync` with `shell: false` and a 5s timeout.
 - Keep review read-only through the opencode `plan` agent, `--pure`, and prompt-level read-only constraints. `--dangerously-skip-permissions` and edit-enabling behavior must remain explicit opt-ins and must not be exposed through the Codex MCP rescue tool.
 - Validate MCP input before runtime execution and validate again inside the stdio server before invoking the companion runtime.
 - Keep job state and logs outside the repository by default (`CLAUDE_PLUGIN_DATA/state` when provided, otherwise the runtime fallback outside the checkout).

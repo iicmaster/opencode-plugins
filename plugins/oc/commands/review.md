@@ -1,6 +1,6 @@
 ---
 description: Ask the opencode CLI to review the current git work from Claude Code
-argument-hint: "[--wait|--background] [--base <ref>] [--timeout <duration>] [--model <provider/model>] [focus text]"
+argument-hint: "[--wait|--background] [--base <ref>] [--timeout <duration>] [--model <id|alias>] [focus text]"
 disable-model-invocation: true
 allowed-tools: Bash(node:*), Bash(git:*), AskUserQuestion
 ---
@@ -14,6 +14,7 @@ Core constraints:
 - This command is review-only. It runs opencode with the read-only `plan` agent.
 - Do not fix issues, apply patches, or suggest that you are about to make changes.
 - Return the companion stdout verbatim to the user.
+- Model selection: `--model` accepts a full id or an alias (`kimi`, `glm`); `OC_MODEL` is the default when `--model` is absent. Validation against `opencode models` is warn-only.
 
 Foreground flow:
 

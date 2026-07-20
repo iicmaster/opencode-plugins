@@ -37,11 +37,15 @@ Supported commands:
 - `result <job-id>` prints captured output for a job.
 - `cancel <job-id>` cancels a queued or running job.
 
+All run tools accept an optional `model` (full opencode id or a built-in alias: `kimi`, `glm`);
+`OC_MODEL` provides the default when `model` is omitted, and unknown ids only produce a warning.
+
 Examples:
 
 ```bash
 node "<path-to-this-skill>/scripts/oc-codex.mjs" setup
 node "<path-to-this-skill>/scripts/oc-codex.mjs" review "--base main security focus"
+node "<path-to-this-skill>/scripts/oc-codex.mjs" review "--model kimi security focus"
 node "<path-to-this-skill>/scripts/oc-codex.mjs" rescue "--background --timeout 30s investigate the failing test"
 node "<path-to-this-skill>/scripts/oc-codex.mjs" status
 node "<path-to-this-skill>/scripts/oc-codex.mjs" result "<job-id>"
