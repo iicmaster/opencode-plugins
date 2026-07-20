@@ -271,7 +271,9 @@ export function createJob(cwd, options, env = process.env) {
     jobFile: payload.jobFile,
     logFile: payload.logFile,
     resultFile: payload.resultFile,
-    promptFile: payload.promptFile
+    promptFile: payload.promptFile,
+    model: payload.runOptions.model,
+    modelSource: options.modelSource ?? null
   }, env);
   return payload;
 }

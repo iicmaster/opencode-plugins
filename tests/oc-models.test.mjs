@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { MODEL_ALIASES, resolveModel, unknownModelWarning } from "../plugins/oc/scripts/lib/models.mjs";
-import { assertSafeModelValue, listOpencodeModels } from "../plugins/oc/scripts/lib/oc-runtime.mjs";
+import { assertSafeModelValue, createJob, listOpencodeModels, loadState } from "../plugins/oc/scripts/lib/oc-runtime.mjs";
 
 test("resolveModel resolves built-in aliases and passes full ids through", () => {
   assert.deepEqual(resolveModel("kimi", {}), { model: "kimi-for-coding/k3", aliasUsed: "kimi", source: "flag" });
@@ -103,4 +103,20 @@ test("listOpencodeModels returns null when opencode is not on PATH", () => {
   const emptyBin = path.join(cwd, "empty-bin");
   fs.mkdirSync(emptyBin, { recursive: true });
   assert.equal(listOpencodeModels(cwd, { ...process.env, OC_MODEL: "", PATH: emptyBin }), null);
+});
+
+test("createJob records the resolved model and its source in state", () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "oc-job-model-"));
+  const env = { ...process.env, OC_MODEL: "", CLAUDE_PLUGIN_DATA: path.join(cwd, "plugin-data") };
+  const payload = createJob(cwd, {
+    kind: "review",
+    prompt: "x",
+    model: "kimi-for-coding/k3",
+    modelSource: "flag"
+  }, env);
+
+  assert.equal(payload.runOptions.model, "kimi-for-coding/k3");
+  const job = loadState(cwd, env).jobs.find((entry) => entry.id === payload.id);
+  assert.equal(job.model, "kimi-for-coding/k3");
+  assert.equal(job.modelSource, "flag");
 });
