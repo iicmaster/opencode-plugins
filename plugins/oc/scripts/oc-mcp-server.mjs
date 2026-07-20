@@ -21,7 +21,9 @@ const SAFE_REF_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/@-]{0,127}$/;
 const SAFE_JOB_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 // Mirror the companion's SAFE_VALUE_PATTERN: a model value must start with an
 // alphanumeric so it can never be reparsed as an opencode flag (e.g. "-x"), and
-// must be bounded and free of whitespace. Allows ids like "zai-coding-plan/glm-5.2".
+// must be bounded and free of whitespace. Allows full ids like
+// "zai-coding-plan/glm-5.2" and built-in aliases like "kimi" (aliases are
+// resolved by the companion, never here).
 const SAFE_MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/@:-]{0,127}$/;
 
 const tools = [
@@ -77,7 +79,7 @@ const tools = [
       properties: {
         focus: { type: "string", description: "Optional review focus." },
         base: { type: "string", description: "Optional base ref for git diff base...HEAD." },
-        model: { type: "string", description: "Optional opencode model id such as zai-coding-plan/glm-5.2." },
+        model: { type: "string", description: "Optional opencode model id or alias (kimi, glm). Defaults to OC_MODEL when set." },
         timeout: { type: "string", description: "Go duration such as 30s or 10m0s." },
         background: { type: "boolean", description: "Run opencode in the background." }
       }
@@ -92,7 +94,7 @@ const tools = [
       properties: {
         focus: { type: "string", description: "Optional adversarial review focus." },
         base: { type: "string", description: "Optional base ref for git diff base...HEAD." },
-        model: { type: "string", description: "Optional opencode model id such as zai-coding-plan/glm-5.2." },
+        model: { type: "string", description: "Optional opencode model id or alias (kimi, glm). Defaults to OC_MODEL when set." },
         timeout: { type: "string", description: "Go duration such as 30s or 10m0s." },
         background: { type: "boolean", description: "Run opencode in the background." }
       }
@@ -107,6 +109,7 @@ const tools = [
       required: ["task"],
       properties: {
         task: { type: "string", description: "Bounded opencode task text." },
+        model: { type: "string", description: "Optional opencode model id or alias (kimi, glm). Defaults to OC_MODEL when set." },
         timeout: { type: "string", description: "Go duration such as 30s or 10m0s." },
         background: { type: "boolean", description: "Run opencode in the background." }
       }
@@ -260,9 +263,10 @@ function reviewArgs(args) {
 }
 
 function rescueArgs(args) {
-  // Intentionally omits "model": rescue via the MCP tool stays minimal and
-  // locked down. Model selection is a review-panel concern (oc_review only).
-  rejectUnknown(args, ["task", "timeout", "background"]);
+  // Rescue accepts a model for parity with the Claude /oc:rescue command. It
+  // stays read-only (the plan agent) regardless of model choice, and
+  // edit-enabling or permission-bypass flags remain unavailable here.
+  rejectUnknown(args, ["task", "model", "timeout", "background"]);
   const argv = [];
   addCommonRunArgs(argv, args);
   // "--" terminator keeps flag-like task text from being reparsed into options.

@@ -14,6 +14,11 @@ function writeFakeOpencode(binDir) {
   fs.writeFileSync(
     fake,
     `#!/usr/bin/env node
+if (process.argv[2] === "models") {
+  console.log("zai-coding-plan/glm-5.2");
+  console.log("kimi-for-coding/k3");
+  process.exit(0);
+}
 if (process.argv.includes("--help")) {
   console.log("run --agent --model --session --continue --pure --dangerously-skip-permissions");
   process.exit(0);
@@ -30,6 +35,11 @@ function writeHangingOpencode(binDir) {
   fs.writeFileSync(
     fake,
     `#!/usr/bin/env node
+if (process.argv[2] === "models") {
+  console.log("zai-coding-plan/glm-5.2");
+  console.log("kimi-for-coding/k3");
+  process.exit(0);
+}
 if (process.argv.includes("--help")) {
   console.log("run --agent --model --session --continue --pure --dangerously-skip-permissions");
   process.exit(0);
@@ -111,7 +121,8 @@ test("opencode MCP server exposes setup as a callable tool", async () => {
   writeFakeOpencode(binDir);
   const client = createMcpClient({
     ...process.env,
-    PATH: `${binDir}${path.delimiter}${process.env.PATH}`
+    PATH: `${binDir}${path.delimiter}${process.env.PATH}`,
+    OC_MODEL: ""
   });
 
   try {
@@ -135,8 +146,16 @@ test("opencode MCP server exposes setup as a callable tool", async () => {
   }
 });
 
-test("opencode MCP rescue does not expose edit-enabling or permission-bypass flags", async () => {
-  const client = createMcpClient(process.env);
+test("opencode MCP rescue accepts a model but not edit-enabling or permission-bypass flags", async () => {
+  const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "oc-bin-"));
+  writeFakeOpencode(binDir);
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "oc-data-"));
+  const client = createMcpClient({
+    ...process.env,
+    PATH: `${binDir}${path.delimiter}${process.env.PATH}`,
+    CLAUDE_PLUGIN_DATA: dataDir,
+    OC_MODEL: ""
+  });
 
   try {
     await client.request("initialize", {
@@ -148,9 +167,9 @@ test("opencode MCP rescue does not expose edit-enabling or permission-bypass fla
     const tools = await client.request("tools/list");
     const rescue = tools.result.tools.find((tool) => tool.name === "oc_rescue");
     assert.ok(rescue);
+    assert.ok(Object.hasOwn(rescue.inputSchema.properties, "model"));
     assert.ok(!Object.hasOwn(rescue.inputSchema.properties, "allowEdits"));
     assert.ok(!Object.hasOwn(rescue.inputSchema.properties, "dangerouslySkipPermissions"));
-    assert.ok(!Object.hasOwn(rescue.inputSchema.properties, "model"));
     assert.ok(!Object.hasOwn(rescue.inputSchema.properties, "session"));
 
     const rejected = await client.request("tools/call", {
@@ -159,14 +178,18 @@ test("opencode MCP rescue does not expose edit-enabling or permission-bypass fla
     });
     assert.match(rejected.error.message, /unknown argument: dangerouslySkipPermissions/);
 
-    // Binds the schema omission above to runtime behavior: rescue must reject a
-    // model arg even though oc_review accepts one, so re-adding "model" to the
-    // rescue allowlist without a schema change is caught here.
-    const modelRejected = await client.request("tools/call", {
+    // The alias is resolved by the companion, so the payload stores the full id.
+    await client.request("tools/call", {
       name: "oc_rescue",
-      arguments: { task: "inspect safely", model: "zai-coding-plan/glm-5.2" }
+      arguments: { task: "inspect safely", model: "kimi" }
     });
-    assert.match(modelRejected.error.message, /unknown argument: model/);
+
+    const jobsDir = path.join(dataDir, "state", "jobs");
+    const jobFile = fs.readdirSync(jobsDir).find((file) => file.endsWith(".json"));
+    const payload = JSON.parse(fs.readFileSync(path.join(jobsDir, jobFile), "utf8"));
+    assert.equal(payload.runOptions.model, "kimi-for-coding/k3");
+    // Rescue stays read-only (plan agent) regardless of the selected model.
+    assert.equal(payload.runOptions.sandbox, true);
   } finally {
     client.close();
   }
@@ -179,7 +202,8 @@ test("flag-like task text cannot escalate permissions through the companion", as
   const client = createMcpClient({
     ...process.env,
     PATH: `${binDir}${path.delimiter}${process.env.PATH}`,
-    CLAUDE_PLUGIN_DATA: dataDir
+    CLAUDE_PLUGIN_DATA: dataDir,
+    OC_MODEL: ""
   });
 
   try {
@@ -215,7 +239,8 @@ test("opencode MCP review forwards a validated model to the companion", async ()
   const client = createMcpClient({
     ...process.env,
     PATH: `${binDir}${path.delimiter}${process.env.PATH}`,
-    CLAUDE_PLUGIN_DATA: dataDir
+    CLAUDE_PLUGIN_DATA: dataDir,
+    OC_MODEL: ""
   });
 
   try {
@@ -254,7 +279,8 @@ test("opencode MCP review does not hang when opencode stalls", async () => {
   const client = createMcpClient({
     ...process.env,
     PATH: `${binDir}${path.delimiter}${process.env.PATH}`,
-    CLAUDE_PLUGIN_DATA: dataDir
+    CLAUDE_PLUGIN_DATA: dataDir,
+    OC_MODEL: ""
   });
 
   try {
@@ -278,7 +304,7 @@ test("opencode MCP review does not hang when opencode stalls", async () => {
 });
 
 test("opencode MCP review rejects a flag-like model value", async () => {
-  const client = createMcpClient(process.env);
+  const client = createMcpClient({ ...process.env, OC_MODEL: "" });
 
   try {
     await client.request("initialize", {
