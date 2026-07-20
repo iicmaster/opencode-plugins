@@ -291,3 +291,37 @@ test("companion status shows the recorded model for each job", () => {
   assert.equal(run.status, 0, run.stderr);
   assert.match(run.stdout, new RegExp(`${payload.id}.*kimi-for-coding/k3`));
 });
+
+test("background rescue propagates the resolved model and the flag beats OC_MODEL", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "oc-bg-model-"));
+  const { binDir, dataDir, env } = companionEnv(cwd);
+  writeFullFakeOpencode(binDir);
+
+  const submission = spawnSync(
+    process.execPath,
+    [COMPANION, "rescue", "--background", "--model", "kimi", "--", "investigate the flake"],
+    { cwd, env: { ...env, OC_MODEL: "glm" }, encoding: "utf8" }
+  );
+  assert.equal(submission.status, 0, submission.stderr);
+  const jobId = /Job: (\S+)/.exec(submission.stdout)[1];
+  assert.ok(jobId);
+
+  let job;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    job = loadState(cwd, env).jobs.find((entry) => entry.id === jobId);
+    if (job && ["succeeded", "failed", "cancelled"].includes(job.status)) {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.equal(job.status, "succeeded");
+  assert.equal(job.model, "kimi-for-coding/k3");
+  assert.equal(job.modelSource, "flag");
+
+  const payload = JSON.parse(fs.readFileSync(path.join(dataDir, "state", "jobs", `${jobId}.json`), "utf8"));
+  assert.equal(payload.runOptions.model, "kimi-for-coding/k3");
+  const invocation = JSON.parse(fs.readFileSync(payload.resultFile, "utf8"));
+  const modelFlagIndex = invocation.argv.indexOf("--model");
+  assert.ok(modelFlagIndex !== -1);
+  assert.equal(invocation.argv[modelFlagIndex + 1], "kimi-for-coding/k3");
+});
